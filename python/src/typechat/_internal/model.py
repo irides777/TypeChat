@@ -65,9 +65,18 @@ class HttpxLanguageModel(TypeChatLanguageModel, AsyncContextManager):
         if isinstance(prompt, str):
             prompt = [{"role": "user", "content": prompt}]
 
+        # body = {
+        #     **self.default_params,
+        #     "messages": prompt,
+        #     "temperature": 0.0,
+        #     "n": 1,
+        # }
         body = {
             **self.default_params,
-            "messages": prompt,
+            # "messages": prompt,
+            "input":{
+                "messages": prompt,
+            },
             "temperature": 0.0,
             "n": 1,
         }
@@ -85,7 +94,8 @@ class HttpxLanguageModel(TypeChatLanguageModel, AsyncContextManager):
                         dict[Literal["choices"], list[dict[Literal["message"], PromptSection]]],
                         response.json()
                     )
-                    return Success(json_result["choices"][0]["message"]["content"] or "")
+                    # return Success(json_result["choices"][0]["message"]["content"] or "")
+                    return Success(json_result["output"]["choices"][0]["message"]["content"] or "")
 
                 if response.status_code not in _TRANSIENT_ERROR_CODES or retry_count >= self.max_retry_attempts:
                     return Failure(f"REST API error {response.status_code}: {response.reason_phrase}")
@@ -145,6 +155,13 @@ def create_language_model(vals: dict[str, str | None]) -> HttpxLanguageModel:
         api_key=required_var("AZURE_OPENAI_API_KEY")
         endpoint=required_var("AZURE_OPENAI_ENDPOINT")
         return create_azure_openai_language_model(api_key, endpoint)
+
+    elif "DASHSCOPE_API_KEY" in vals:
+        api_key=required_var("DASHSCOPE_API_KEY")
+        model=required_var("QWEN_MODEL")
+        endpoint=required_var("QWEN_ENDPOINT")
+        return create_qwen_language_model(api_key, model, endpoint)
+
     else:
         raise ValueError("Missing environment variables for OPENAI_API_KEY or AZURE_OPENAI_API_KEY.")
 
@@ -182,3 +199,26 @@ def create_azure_openai_language_model(api_key: str, endpoint: str) -> HttpxLang
         "api-key": api_key,
     }
     return HttpxLanguageModel(url=endpoint, headers=headers, default_params={})
+
+def create_qwen_language_model(api_key: str, model: str, endpoint: str) -> HttpxLanguageModel:
+    """
+    Creates a language model encapsulation of a Qwen REST API endpoint.
+
+    Args:
+        api_key: The Qwen API Key.
+        endpoint: The Qwen REST API endpoint.
+    """
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    default_params = {
+        "model": model,
+        "parameters": {
+            "result_format": "message",
+            "temperature": 0.1,
+        },
+    }
+    return HttpxLanguageModel(url=endpoint, headers=headers, default_params=default_params)
+
